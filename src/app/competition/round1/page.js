@@ -1,0 +1,357 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useConfirm } from '@/hooks/useConfirm';
+import QuestionCard from '@/app/components/QuestionCard';
+import QueryEditor from '@/app/components/QueryEditor';
+import ResultDisplay from '@/app/components/ResultDisplay';
+import Navigation from '@/app/components/Navigation';
+import RoundEntryModal from '@/app/components/RoundEntryModal';
+import { useRoundSession } from '@/hooks/useRoundSession';
+import { useProctoring } from '@/hooks/useProctoring';
+
+export default function Round1Page() {
+  const [participant, setParticipant] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [submissions, setSubmissions] = useState({});
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [totalScore, setTotalScore] = useState(0);
+  const [showEntryModal, setShowEntryModal] = useState(true);
+  const router = useRouter();
+
+  // Session and proctoring hooks
+  const {
+    timeRemaining,
+    isActive: timerActive,
+    sessionData,
+    violations,
+    startSession,
+    endSession,
+    addViolation,
+    formatTime,
+    isTimeUp
+  } = useRoundSession(1, 90);
+
+  const { requestFullscreen } = useProctoring(addViolation, timerActive);
+
+  useEffect(() => {
+    const storedParticipant = localStorage.getItem('participant');
+    if (!storedParticipant) {
+      router.push('/login');
+      return;
+    }
+    
+    setParticipant(JSON.parse(storedParticipant));
+    fetchQuestions();
+    
+    // Restore progress
+    const savedProgress = localStorage.getItem('round1_progress');
+    if (savedProgress) {
+      const progress = JSON.parse(savedProgress);
+      setSubmissions(progress.submissions || {});
+      setTotalScore(progress.totalScore || 0);
+      
+      // If there's an active session, don't show entry modal
+      if (sessionData) {
+        setShowEntryModal(false);
+      }
+    }
+  }, [router, sessionData]);
+
+  useEffect(() => {
+    // Clear previous result when switching questions
+    setResult(null);
+  }, [currentQuestion]);
+
+  // Handle time up
+  useEffect(() => {
+    if (isTimeUp && timerActive) {
+      handleTimeUp();
+    }
+  }, [isTimeUp, timerActive]);
+
+  // Block navigation during active session
+  useEffect(() => {
+    if (!timerActive) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = 'Your test session is active. Leaving will be logged as a violation.';
+      return e.returnValue;
+    };
+
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [timerActive, addViolation, router]);
+
+  const fetchQuestions = async () => {
+    try {
+      const response = await fetch('/api/problems/round1');
+      const data = await response.json();
+      setQuestions(data.questions || []);
+    } catch (error) {
+      console.error('Failed to fetch questions:', error);
+    }
+  };
+
+  const handleRoundStart = () => {
+    if (!participant) return;
+    
+    setShowEntryModal(false);
+    startSession(participant._id);
+    requestFullscreen();
+    
+    // Log session start
+    addViolation('SESSION_START', 'Round 1 session started');
+  };
+
+  const handleTimeUp = () => {
+    addViolation('TIME_UP', 'Round 1 time expired');
+    endSession();
+    alert('⏰ Time is up! Round 1 has ended.');
+    localStorage.removeItem('round1_progress');
+    router.push('/competition');
+  };
+
+  const confirm = useConfirm();
+
+  const handleCompleteRound = async () => {
+    const isConfirmed = await confirm({
+      title: 'Complete Round 1',
+      message: `Are you sure you want to complete Round 1?
+
+⚠️ IMPORTANT CONSEQUENCES:
+• You cannot return to change any answers
+• Your current progress will be submitted as final
+• Round 1 will be permanently closed for you
+• This action cannot be undone
+
+Current Status:
+• Questions Answered: ${getSubmittedCount()}/${questions.length}
+• Total Score: ${totalScore}/${questions.length * 15} points`,
+      confirmText: 'Yes, Complete Round 1',
+      cancelText: 'Cancel'
+    });
+
+    if (isConfirmed) {
+      // Set completion flag in localStorage
+      localStorage.setItem('round1_completed', 'true');
+      
+      // Log completion
+      addViolation('MANUAL_END', 'Round 1 completed manually by participant');
+      endSession();
+      
+      // Clear progress data
+      localStorage.removeItem('round1_progress');
+      
+      // Navigate to competition hub
+      router.replace('/competition');
+    }
+  };
+
+
+  const handleQuerySubmit = async (queryPayload) => {
+    setLoading(true);
+    try {
+      const payload = {
+        ...queryPayload,
+        participantId: participant._id,
+        questionId: currentQuestion.id,
+        round: 1,
+        sessionData: {
+          timeElapsed: sessionData ? Math.floor((Date.now() - sessionData.startTime) / 1000) : 0,
+          violationsCount: violations.length
+        }
+      };
+
+      const response = await fetch('/api/submit/round1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        const newSubmissions = {
+          ...submissions,
+          [currentQuestion.id]: data.result
+        };
+        const newTotalScore = data.result.newTotalScore;
+        
+        setResult(data);
+        setSubmissions(newSubmissions);
+        setTotalScore(newTotalScore);
+        
+        // Save progress
+        const progress = {
+          submissions: newSubmissions,
+          totalScore: newTotalScore,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('round1_progress', JSON.stringify(progress));
+        
+        addViolation('SUBMISSION', `Submitted answer for Question ${currentQuestion.id}`);
+      } else {
+        setResult({ error: data.error || 'Submission failed' });
+      }
+    } catch (error) {
+      setResult({ error: 'Network error: ' + error.message });
+      addViolation('SUBMISSION_ERROR', `Submission failed: ${error.message}`);
+    }
+    setLoading(false);
+  };
+
+  const getSubmittedCount = () => Object.keys(submissions).length;
+  const getScoreByQuestionId = (questionId) => submissions[questionId] || null;
+
+  if (showEntryModal) {
+  return (
+    <RoundEntryModal
+      roundNumber={1}
+      onConfirm={handleRoundStart}
+      onCancel={() => router.push('/competition')}
+    />
+  );
+}
+
+  if (!participant) {
+    return <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+    </div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      
+      {/* Proctoring Status Bar */}
+      <div className="bg-red-600 text-white px-4 py-2 text-sm">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <span className="flex items-center">
+              🔴 <span className="ml-1">LIVE PROCTORING</span>
+            </span>
+            <span>Time: {formatTime()}</span>
+            <span>Violations: {violations.length}</span>
+          </div>
+          <div className="text-xs opacity-75">
+            Session monitored • Academic integrity enforced
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Round 1 - Find Queries</h1>
+                <p className="text-m text-gray-600">MongoDB Find Operations with Filtering, Sorting, and Projection</p>
+              </div>
+              <div className="text-right">
+                <div className="text-xl font-bold text-blue-600">
+                  {totalScore}/{questions.length * 15} points
+                </div>
+                <div className="text-sm text-gray-500">
+                  {getSubmittedCount()}/{questions.length} questions completed
+                </div>
+                <button
+                  onClick={handleCompleteRound}
+                  className="mt-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm"
+                >
+                  Complete Round
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-4 bg-gray-100 rounded-full h-2">
+              <div 
+                className="bg-violet-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(getSubmittedCount() / questions.length) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-md p-6 sticky top-24 max-h-[calc(100vh-200px)] overflow-y-auto">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">Questions ({questions.length})</h2>
+              <div className="space-y-3">
+                {questions.map((question) => (
+                  <QuestionCard
+                    key={question.id}
+                    question={question}
+                    onSubmit={setCurrentQuestion}
+                    isSubmitted={!!submissions[question.id]}
+                    score={getScoreByQuestionId(question.id)}
+                    isLoading={loading && currentQuestion?.id === question.id}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 space-y-6">
+            {currentQuestion ? (
+              <>
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-800">
+                        Question {currentQuestion.id}: {currentQuestion.title}
+                      </h2>
+                      <p className="text-gray-600 mt-2 text-sm">{currentQuestion.description}</p>
+                    </div>
+                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+                      {currentQuestion.points || 15} points
+                    </span>
+                  </div>
+                </div>
+
+                {!submissions[currentQuestion.id] ? (
+                  <QueryEditor
+                    mode="find"
+                    question={currentQuestion}
+                    onSubmit={handleQuerySubmit}
+                    isLoading={loading}
+                  />
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <svg className="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-green-800 font-medium">
+                        Question submitted! Score: {submissions[currentQuestion.id]?.score?.total || 0}/{currentQuestion.points || 15}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <ResultDisplay result={result} isLoading={loading} />
+              </>
+            ) : (
+              <div className="bg-white rounded-lg shadow-md p-12 text-center">
+                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <h3 className="text-lg font-medium text-gray-800 mb-2">Select a Question</h3>
+                <p className="text-gray-600">Choose a question from the left panel to start solving</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
