@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect , useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConfirm } from '@/hooks/useConfirm';
 import QuestionCard from '@/app/components/QuestionCard';
@@ -20,8 +20,9 @@ export default function Round1Page() {
   const [totalScore, setTotalScore] = useState(0);
   const [showEntryModal, setShowEntryModal] = useState(true);
   const router = useRouter();
+  const confirm = useConfirm();
 
-  // Session and proctoring hooks
+  // Session hooks for Round 1
   const {
     timeRemaining,
     isActive: timerActive,
@@ -34,7 +35,30 @@ export default function Round1Page() {
     isTimeUp
   } = useRoundSession(1, 90);
 
-  const { requestFullscreen } = useProctoring(addViolation, timerActive);
+  // Auto-eject callback function for Round 1
+const handleAutoEject = useCallback(() => {
+  // Set completion flag
+  localStorage.setItem('round1_completed', 'true');
+  
+  // Log ejection
+  addViolation('AUTO_EJECT', 'Participant ejected due to excessive violations');
+  endSession();
+  
+  // Clear progress
+  localStorage.removeItem('round1_progress');
+  
+  // Use setTimeout to defer navigation until after render completes
+  setTimeout(() => {
+    router.replace('/leaderboard');
+  }, 0);
+}, [addViolation, endSession, router]);
+
+  // Proctoring hook with auto-eject callback
+  const { requestFullscreen, violationCount, hasBeenEjected } = useProctoring(
+    addViolation, 
+    timerActive, 
+    handleAutoEject
+  );
 
   useEffect(() => {
     const storedParticipant = localStorage.getItem('participant');
@@ -53,30 +77,31 @@ export default function Round1Page() {
       setSubmissions(progress.submissions || {});
       setTotalScore(progress.totalScore || 0);
       
-      // If there's an active session, don't show entry modal
       if (sessionData) {
         setShowEntryModal(false);
       }
     }
   }, [router, sessionData]);
-  
+
+  useEffect(() => {
+    setResult(null);
+  }, [currentQuestion]);
 
   // Handle time up
- const handleTimeUp = useCallback(() => {
-  addViolation('TIME_UP', 'Round 1 time expired');
-  endSession();
-  alert('⏰ Time is up! Round 1 has ended.');
-  localStorage.removeItem('round1_progress');
-  router.push('/competition');
-}, [addViolation, endSession, router]); // ← Wrap in useCallback
+  const handleTimeUp = useCallback(() => {
+    addViolation('TIME_UP', 'Round 1 time expired');
+    endSession();
+    alert('Time is up! Round 1 has ended.');
+    localStorage.removeItem('round1_progress');
+    router.push('/competition');
+  }, [addViolation, endSession, router]);
 
-useEffect(() => {
-  if (isTimeUp && timerActive) {
-    handleTimeUp();
-  }
-}, [isTimeUp, timerActive, handleTimeUp]); 
+  useEffect(() => {
+    if (isTimeUp && timerActive) {
+      handleTimeUp();
+    }
+  }, [isTimeUp, timerActive, handleTimeUp]);
 
-  // Block navigation during active session
   useEffect(() => {
     if (!timerActive) return;
 
@@ -86,13 +111,12 @@ useEffect(() => {
       return e.returnValue;
     };
 
-
     window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [timerActive, addViolation, router]);
+  }, [timerActive]);
 
   const fetchQuestions = async () => {
     try {
@@ -111,18 +135,15 @@ useEffect(() => {
     startSession(participant._id);
     requestFullscreen();
     
-    // Log session start
     addViolation('SESSION_START', 'Round 1 session started');
   };
-
-  const confirm = useConfirm();
 
   const handleCompleteRound = async () => {
     const isConfirmed = await confirm({
       title: 'Complete Round 1',
       message: `Are you sure you want to complete Round 1?
 
-⚠️ IMPORTANT CONSEQUENCES:
+IMPORTANT CONSEQUENCES:
 • You cannot return to change any answers
 • Your current progress will be submitted as final
 • Round 1 will be permanently closed for you
@@ -130,27 +151,20 @@ useEffect(() => {
 
 Current Status:
 • Questions Answered: ${getSubmittedCount()}/${questions.length}
-• Total Score: ${totalScore}/${questions.length * 15} points`,
+• Total Score: ${totalScore}/${questions.length * 15} points
+• Violations: ${violationCount}`,
       confirmText: 'Yes, Complete Round 1',
       cancelText: 'Cancel'
     });
 
     if (isConfirmed) {
-      // Set completion flag in localStorage
       localStorage.setItem('round1_completed', 'true');
-      
-      // Log completion
       addViolation('MANUAL_END', 'Round 1 completed manually by participant');
       endSession();
-      
-      // Clear progress data
       localStorage.removeItem('round1_progress');
-      
-      // Navigate to competition hub
       router.replace('/competition');
     }
   };
-
 
   const handleQuerySubmit = async (queryPayload) => {
     setLoading(true);
@@ -162,7 +176,7 @@ Current Status:
         round: 1,
         sessionData: {
           timeElapsed: sessionData ? Math.floor((Date.now() - sessionData.startTime) / 1000) : 0,
-          violationsCount: violations.length
+          violationsCount: violationCount
         }
       };
 
@@ -185,7 +199,6 @@ Current Status:
         setSubmissions(newSubmissions);
         setTotalScore(newTotalScore);
         
-        // Save progress
         const progress = {
           submissions: newSubmissions,
           totalScore: newTotalScore,
@@ -203,55 +216,62 @@ Current Status:
     }
     setLoading(false);
   };
+
   useEffect(() => {
-  // Clear previous result when switching questions
-  setResult(null);
-}, [currentQuestion?.id]);
+    setResult(null);
+  }, [currentQuestion?.id]);
+
   const handleQueryRun = async (queryPayload) => {
-  setLoading(true);
-  try {
-    const payload = {
-      ...queryPayload,
-      participantId: participant._id,
-      questionId: currentQuestion.id,
-      round: 1,
-      preview: true, // Flag to indicate this is just a preview run
-    };
-
-    const response = await fetch('/api/run-query/round1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
+    setLoading(true);
+    setResult(null);
     
-    if (data.success) {
-      setResult({
-        ...data,
-        isPreview: true // Flag to show this is just a preview
+    try {
+      const payload = {
+        ...queryPayload,
+        participantId: participant._id,
+        questionId: currentQuestion.id,
+        round: 1,
+        preview: true,
+      };
+
+      const response = await fetch('/api/run-query/round1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-    } else {
-      setResult({ error: data.error || 'Query execution failed' });
+
+      const data = await response.json();
+      
+      if (currentQuestion?.id === queryPayload.questionId) {
+        if (data.success) {
+          setResult({
+            ...data,
+            isPreview: true
+          });
+        } else {
+          setResult({ error: data.error || 'Query execution failed' });
+        }
+      }
+    } catch (error) {
+      if (currentQuestion?.id === queryPayload.questionId) {
+        setResult({ error: 'Network error: ' + error.message });
+      }
     }
-  } catch (error) {
-    setResult({ error: 'Network error: ' + error.message });
-  }
-  setLoading(false);
-};
+    setLoading(false);
+  };
 
   const getSubmittedCount = () => Object.keys(submissions).length;
   const getScoreByQuestionId = (questionId) => submissions[questionId] || null;
 
   if (showEntryModal) {
-  return (
-    <RoundEntryModal
-      roundNumber={1}
-      onConfirm={handleRoundStart}
-      onCancel={() => router.push('/competition')}
-    />
-  );
-}
+    return (
+      <RoundEntryModal
+        roundNumber={1}
+        onConfirm={handleRoundStart}
+        onCancel={() => router.push('/competition')}
+      />
+    );
+  }
 
   if (!participant) {
     return <div className="min-h-screen flex items-center justify-center">
@@ -263,18 +283,31 @@ Current Status:
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       
-      {/* Proctoring Status Bar */}
+      {/* Enhanced Proctoring Status Bar - FIXED VERSION */}
       <div className="bg-red-600 text-white px-4 py-2 text-sm">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
             <span className="flex items-center">
-              🔴 <span className="ml-1">LIVE PROCTORING</span>
+              <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse mr-2"></span>
+              <span className="ml-1">LIVE PROCTORING</span>
             </span>
             <span>Time: {formatTime()}</span>
-            <span>Violations: {violations.length}</span>
+            <span className={`${violationCount >= 5 ? 'text-yellow-300 font-bold animate-pulse' : ''}`}>
+              Violations: {violationCount}/5
+            </span>
+            {violationCount >= 5 && (
+              <span className="text-yellow-300 font-bold">
+                FINAL WARNING
+              </span>
+            )}
+            {hasBeenEjected && (
+              <span className="text-red-300 font-bold">
+                EJECTED
+              </span>
+            )}
           </div>
           <div className="text-xs opacity-75">
-            Session monitored • Academic integrity enforced
+            Session monitored - Academic integrity enforced
           </div>
         </div>
       </div>
@@ -288,7 +321,7 @@ Current Status:
                 <p className="text-m text-gray-600">MongoDB Find Operations with Filtering, Sorting, and Projection</p>
               </div>
               <div className="text-right">
-                <div className="text-xl font-bold text-blue-600">
+                <div className="text-2xl font-bold text-blue-600">
                   {totalScore}/{questions.length * 15} points
                 </div>
                 <div className="text-sm text-gray-500">
@@ -296,16 +329,21 @@ Current Status:
                 </div>
                 <button
                   onClick={handleCompleteRound}
-                  className="mt-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm"
+                  disabled={hasBeenEjected}
+                  className={`mt-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                    hasBeenEjected 
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
                 >
-                  Complete Round
+                  {hasBeenEjected ? 'Test Ended' : 'Complete Round'}
                 </button>
               </div>
             </div>
             
             <div className="mt-4 bg-gray-100 rounded-full h-2">
               <div 
-                className="bg-violet-600 h-2 rounded-full transition-all duration-300"
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${(getSubmittedCount() / questions.length) * 100}%` }}
               ></div>
             </div>
@@ -325,6 +363,7 @@ Current Status:
                     isSubmitted={!!submissions[question.id]}
                     score={getScoreByQuestionId(question.id)}
                     isLoading={loading && currentQuestion?.id === question.id}
+                    disabled={hasBeenEjected}
                   />
                 ))}
               </div>
@@ -348,15 +387,16 @@ Current Status:
                   </div>
                 </div>
 
-                {!submissions[currentQuestion.id] ? (
+                {!submissions[currentQuestion.id] && !hasBeenEjected ? (
                   <QueryEditor
                     mode="find"
                     question={currentQuestion}
                     onSubmit={handleQuerySubmit}
+                    onRunQuery={handleQueryRun} 
                     isLoading={loading}
-                    onRunQuery={handleQueryRun}
+                    disabled={hasBeenEjected}
                   />
-                ) : (
+                ) : submissions[currentQuestion.id] ? (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center">
                       <svg className="h-5 w-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
@@ -364,6 +404,17 @@ Current Status:
                       </svg>
                       <span className="text-green-800 font-medium">
                         Question submitted! Score: {submissions[currentQuestion.id]?.score?.total || 0}/{currentQuestion.points || 15}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <svg className="h-5 w-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-red-800 font-medium">
+                        Test ended due to violations. Cannot submit answers.
                       </span>
                     </div>
                   </div>
@@ -376,8 +427,15 @@ Current Status:
                 <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
-                <h3 className="text-lg font-medium text-gray-800 mb-2">Select a Question</h3>
-                <p className="text-gray-600">Choose a question from the left panel to start solving</p>
+                <h3 className="text-lg font-medium text-gray-800 mb-2">
+                  {hasBeenEjected ? 'Test Ended' : 'Select a Question'}
+                </h3>
+                <p className="text-gray-600">
+                  {hasBeenEjected 
+                    ? 'You have been ejected from the test due to violations'
+                    : 'Choose a question from the left panel to start solving'
+                  }
+                </p>
               </div>
             )}
           </div>
@@ -386,5 +444,6 @@ Current Status:
     </div>
   );
 }
+
 
 

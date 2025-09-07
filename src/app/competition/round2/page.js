@@ -37,20 +37,22 @@ export default function Round2Page() {
   } = useRoundSession(2, 90);
 
   // Auto-eject callback function for Round 2
-  const handleAutoEject = useCallback(async () => {
-    // Set completion flag
-    localStorage.setItem('round2_completed', 'true');
-    
-    // Log ejection
-    addViolation('AUTO_EJECT', 'Participant ejected due to excessive violations');
-    endSession();
-    
-    // Clear progress
-    localStorage.removeItem('round2_progress');
-    
-    // Navigate to leaderboard
+ const handleAutoEject = useCallback(() => {
+  // Set completion flag
+  localStorage.setItem('round2_completed', 'true');
+  
+  // Log ejection
+  addViolation('AUTO_EJECT', 'Participant ejected due to excessive violations');
+  endSession();
+  
+  // Clear progress
+  localStorage.removeItem('round2_progress');
+  
+  // Use setTimeout to defer navigation until after render completes
+  setTimeout(() => {
     router.replace('/leaderboard');
-  }, [addViolation, endSession, router]);
+  }, 0);
+}, [addViolation, endSession, router]);
 
   // Proctoring hook with auto-eject callback
   const { requestFullscreen, violationCount, hasBeenEjected } = useProctoring(

@@ -36,7 +36,7 @@ Click OK to acknowledge this warning and continue.`;
       }
       
       // Auto-eject after 5 violations
-      if (newCount > 10000) {
+      if (newCount > 5) {
         hasBeenEjected.current = true;
         
         const ejectionMessage = `🚫 TEST EJECTION NOTICE 🚫

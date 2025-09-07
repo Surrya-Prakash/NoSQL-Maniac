@@ -208,7 +208,7 @@ export default function LeaderboardPage() {
                           <tr 
                             key={entry._id}
                             className={`
-                              ${isCurrentParticipant(entry) ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'}
+                              ${isCurrentParticipant(entry) ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50 text-gray-600'}
                               ${index < 3 ? getRankColor(index + 1) : ''}
                             `}
                           >
