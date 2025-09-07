@@ -104,7 +104,7 @@ export default function Round2Page() {
     };
 
     checkRound1Status();
-  }, [router,]);
+  }, [router , sessionData]);
 
 
   useEffect(() => {
@@ -254,6 +254,54 @@ Current Status:
     setLoading(false);
   };
 
+// Add this useEffect in both Round1Page and Round2Page
+useEffect(() => {
+  // Clear previous result when switching questions
+  setResult(null);
+}, [currentQuestion?.id]); // Depend on question ID
+
+// Also modify the handleQueryRun to include question context
+const handleQueryRun = async (queryPayload) => {
+  setLoading(true);
+  setResult(null); // Clear any previous results
+  
+  try {
+    const payload = {
+      ...queryPayload,
+      participantId: participant._id,
+      questionId: currentQuestion.id,
+      round: 2, // or 2 for round 2
+      preview: true,
+    };
+
+    const response = await fetch('/api/run-query/round2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    
+    // Only set result if still on same question
+    if (currentQuestion?.id === queryPayload.questionId) {
+      if (data.success) {
+        setResult({
+          ...data,
+          isPreview: true
+        });
+      } else {
+        setResult({ error: data.error || 'Query execution failed' });
+      }
+    }
+  } catch (error) {
+    if (currentQuestion?.id === queryPayload.questionId) {
+      setResult({ error: 'Network error: ' + error.message });
+    }
+  }
+  setLoading(false);
+};
+
+
   const getSubmittedCount = () => Object.keys(submissions).length;
   const getScoreByQuestionId = (questionId) => submissions[questionId] || null;
 
@@ -396,6 +444,7 @@ Current Status:
                     mode="aggregate"
                     question={currentQuestion}
                     onSubmit={handleQuerySubmit}
+                    onRunQuery={handleQueryRun} 
                     isLoading={loading}
                     disabled={hasBeenEjected}
                   />

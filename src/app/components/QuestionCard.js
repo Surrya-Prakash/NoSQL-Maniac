@@ -83,13 +83,13 @@ export default function QuestionCard({
           <div className="text-xs space-y-1">
             <div className="flex justify-between">
               <span className="text-gray-600">Correctness:</span>
-              <span className="font-medium">{score.score.correctnessScore || 0}</span>
+              <span className="font-medium text-gray-500">{score.score.correctnessScore || 0}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Performance:</span>
-              <span className="font-medium">{score.score.performanceScore || 0}</span>
+              <span className="font-medium text-gray-500">{score.score.performanceScore || 0}</span>
             </div>
-            <div className="flex justify-between font-medium pt-1 border-t">
+            <div className="flex justify-between font-medium pt-1 border-t text-gray-400">
               <span>Total:</span>
               <span className={getScoreColor()}>{score.score.total || 0}</span>
             </div>

@@ -1,44 +1,73 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Navigation from '@/app/components/Navigation';
+import { useSocket } from '@/hooks/useSocket';
 
 export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const [participant, setParticipant] = useState(null);
-  const [refresh, setRefresh] = useState(0);
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  
+  // Initialize WebSocket connection
+  const { socket, connected } = useSocket();
 
   useEffect(() => {
     const storedParticipant = localStorage.getItem('participant');
     if (storedParticipant) {
       setParticipant(JSON.parse(storedParticipant));
     }
+    
+    // Initial leaderboard fetch
     fetchLeaderboard();
-  }, [refresh]);
+  }, []);
+
+  // Listen for real-time leaderboard updates
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on('leaderboard-update', (data) => {
+      console.log('Received leaderboard update:', data);
+      setLeaderboard(data || []);
+      setLastUpdate(Date.now());
+      setLoading(false);
+    });
+
+    return () => {
+      socket.off('leaderboard-update');
+    };
+  }, [socket]);
 
   const fetchLeaderboard = async () => {
-    setLoading(true);
     try {
       const response = await fetch('/api/leaderboard');
       const data = await response.json();
       
       if (data.success) {
         setLeaderboard(data.leaderboard || []);
+        setLastUpdate(Date.now());
       } else {
         console.error('Leaderboard fetch failed:', data.error);
-        setLeaderboard([]);
       }
     } catch (error) {
       console.error('Failed to fetch leaderboard:', error);
-      setLeaderboard([]);
     }
     setLoading(false);
   };
 
   const handleRefresh = () => {
-    setRefresh(prev => prev + 1);
+    setLoading(true);
+    fetchLeaderboard();
   };
 
+  const formatLastUpdate = () => {
+    const now = Date.now();
+    const diff = Math.floor((now - lastUpdate) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    return `${Math.floor(diff / 60)}m ago`;
+  };
+
+  // Your existing helper functions stay the same
   const getRankIcon = (rank) => {
     switch (rank) {
       case 1: return '🥇';
@@ -85,21 +114,30 @@ export default function LeaderboardPage() {
       
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          {/* Header */}
+          {/* Enhanced Header with Real-time Status */}
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-8">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold text-white">🏆 Leaderboard</h1>
-                <p className="text-blue-100 mt-2">Real-time competition rankings</p>
+                <div className="flex items-center mt-2">
+                  {/* Connection Status Indicator */}
+                  <div className={`w-2 h-2 rounded-full mr-2 ${
+                    connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
+                  }`}></div>
+                  <p className="text-blue-100">
+                    {connected ? 'Live updates' : 'Offline'} 
+                  </p>
+                </div>
               </div>
               <div className="text-right text-white">
                 <div className="text-sm opacity-75">Total Participants</div>
                 <div className="text-2xl font-bold">{leaderboard.length}</div>
                 <button
                   onClick={handleRefresh}
-                  className="mt-2 bg-white bg-opacity-20 hover:bg-opacity-30 px-3 py-1 rounded-lg text-sm transition-colors"
+                  disabled={loading}
+                  className="mt-2 bg-white bg-opacity-20 hover:bg-opacity-30 px-3 py-1 rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
-                  🔄 Refresh
+                  🔄 {loading ? 'Updating...' : 'Refresh'}
                 </button>
               </div>
             </div>

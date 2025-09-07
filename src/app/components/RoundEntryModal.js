@@ -20,16 +20,15 @@ export default function RoundEntryModal({ roundNumber, onConfirm, onCancel }) {
             🔒 Proctored Test Environment - Round {roundNumber}
           </h3>
           <div className="text-sm text-gray-600 space-y-3 mb-6 text-left">
-            <p><strong>⚠️ IMPORTANT - This is a monitored test:</strong></p>
+            <p><strong>IMPORTANT - This is a monitored test:</strong></p>
             <ul className="list-disc list-inside space-y-1 text-xs">
-              <li>🚫 Tab switching will be detected and logged</li>
-              <li>🚫 Right-click and keyboard shortcuts are disabled</li>
-              <li>🚫 Copy/paste attempts will be monitored</li>
-              <li>⏰ Timer continues even if you navigate away</li>
-              <li>📊 All violations are recorded and reviewed</li>
-              <li>🖥️ Test will run in fullscreen mode</li>
-              <li>❌ Excessive violations may result in disqualification</li>
-              <li>{getSpecialFeatures(roundNumber)}</li>
+              <li>Tab switching will be detected and logged</li>
+              <li>Right-click and keyboard shortcuts are disabled</li>
+              <li>Copy/paste attempts will be monitored</li>
+              <li>Timer continues even if you navigate away</li>
+              <li>All violations are recorded and reviewed</li>
+              <li>Test will run in fullscreen mode</li>
+              <li>Excessive violations may result in disqualification</li>
             </ul>
             <p className="text-red-600 font-semibold text-xs">
               By starting, you agree to follow academic integrity policies.

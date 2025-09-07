@@ -4,6 +4,60 @@ import { useState } from 'react';
 export default function ResultDisplay({ result, isLoading = false }) {
   const [activeTab, setActiveTab] = useState('userResult');
 
+    if (result?.isPreview) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center mb-4">
+          <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium mr-3">
+            🔍 Query Preview (Not Submitted)
+          </span>
+          {result.queryError && (
+            <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
+              ⚠️ Query Error
+            </span>
+          )}
+        </div>
+        
+        {result.queryError ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="flex">
+              <svg className="h-5 w-5 text-red-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <h3 className="text-sm font-medium text-red-800">Query Error</h3>
+                <p className="text-sm text-red-700 mt-1">{result.queryError}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-3">Your Result ({result.userResult?.length || 0} documents)</h4>
+              <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-64 font-mono text-gray-900">
+                {JSON.stringify(result.userResult || [], null, 2)}
+              </pre>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-3">Expected Result ({result.expectedResult?.length || 0} documents)</h4>
+              <pre className="bg-gray-50 p-4 rounded-lg text-sm overflow-auto max-h-64 font-mono text-gray-900">
+                {JSON.stringify(result.expectedResult || [], null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+        
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-blue-800 text-sm">
+            💡 <strong>This is a preview.</strong> Compare your result with the expected result. 
+            When you're confident your query is correct, click <strong>"Submit Query"</strong> to get scored.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -192,7 +246,7 @@ export default function ResultDisplay({ result, isLoading = false }) {
                   {result.result.executionTime && (
                     <div className="flex justify-between items-center mt-2">
                       <span className="text-sm text-gray-600">Execution Time</span>
-                      <span className="text-sm font-medium">{result.result.executionTime}ms</span>
+                      <span className="text-sm font-medium text-gray-800">{result.result.executionTime}ms</span>
                     </div>
                   )}
                   {result.result.newTotalScore !== undefined && (

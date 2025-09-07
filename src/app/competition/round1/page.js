@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect , useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConfirm } from '@/hooks/useConfirm';
 import QuestionCard from '@/app/components/QuestionCard';
@@ -59,18 +59,22 @@ export default function Round1Page() {
       }
     }
   }, [router, sessionData]);
-
-  useEffect(() => {
-    // Clear previous result when switching questions
-    setResult(null);
-  }, [currentQuestion]);
+  
 
   // Handle time up
-  useEffect(() => {
-    if (isTimeUp && timerActive) {
-      handleTimeUp();
-    }
-  }, [isTimeUp, timerActive]);
+ const handleTimeUp = useCallback(() => {
+  addViolation('TIME_UP', 'Round 1 time expired');
+  endSession();
+  alert('⏰ Time is up! Round 1 has ended.');
+  localStorage.removeItem('round1_progress');
+  router.push('/competition');
+}, [addViolation, endSession, router]); // ← Wrap in useCallback
+
+useEffect(() => {
+  if (isTimeUp && timerActive) {
+    handleTimeUp();
+  }
+}, [isTimeUp, timerActive, handleTimeUp]); 
 
   // Block navigation during active session
   useEffect(() => {
@@ -109,14 +113,6 @@ export default function Round1Page() {
     
     // Log session start
     addViolation('SESSION_START', 'Round 1 session started');
-  };
-
-  const handleTimeUp = () => {
-    addViolation('TIME_UP', 'Round 1 time expired');
-    endSession();
-    alert('⏰ Time is up! Round 1 has ended.');
-    localStorage.removeItem('round1_progress');
-    router.push('/competition');
   };
 
   const confirm = useConfirm();
@@ -207,6 +203,42 @@ Current Status:
     }
     setLoading(false);
   };
+  useEffect(() => {
+  // Clear previous result when switching questions
+  setResult(null);
+}, [currentQuestion?.id]);
+  const handleQueryRun = async (queryPayload) => {
+  setLoading(true);
+  try {
+    const payload = {
+      ...queryPayload,
+      participantId: participant._id,
+      questionId: currentQuestion.id,
+      round: 1,
+      preview: true, // Flag to indicate this is just a preview run
+    };
+
+    const response = await fetch('/api/run-query/round1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      setResult({
+        ...data,
+        isPreview: true // Flag to show this is just a preview
+      });
+    } else {
+      setResult({ error: data.error || 'Query execution failed' });
+    }
+  } catch (error) {
+    setResult({ error: 'Network error: ' + error.message });
+  }
+  setLoading(false);
+};
 
   const getSubmittedCount = () => Object.keys(submissions).length;
   const getScoreByQuestionId = (questionId) => submissions[questionId] || null;
@@ -322,6 +354,7 @@ Current Status:
                     question={currentQuestion}
                     onSubmit={handleQuerySubmit}
                     isLoading={loading}
+                    onRunQuery={handleQueryRun}
                   />
                 ) : (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
